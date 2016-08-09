@@ -25,6 +25,12 @@ function initTree($tree, autoopen, autoescape, rtl) {
             position: info.position
         };
 
+        const conf = confirm('Применить перемещение?');
+        if (!conf) {
+            location.reload();
+            return;
+        }
+
         removeErrorMessage();
 
         e.preventDefault();

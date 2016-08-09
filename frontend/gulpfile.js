@@ -1,6 +1,6 @@
 const gulp = require("gulp");
 const babel = require("gulp-babel");
-const browserify = require("gulp-browser").browserify;
+const browserify = require('gulp-browserify');
 const sass = require("gulp-sass");
 const header = require("gulp-header");
 const uglify = require("gulp-uglify");
