@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 
-version = '0.4.0'
+version = '0.4.6'
 
 setup(
     name='django-mptt-admin',
@@ -14,7 +14,7 @@ setup(
     author_email='mbraak@ridethepony.nl',
     install_requires=['django-mptt', 'six'],
     description='Django-mptt-admin provides a nice Django Admin interface for Mptt models',
-    long_description=open('README.md').read(),
+    long_description='Django-mptt-admin provides a nice Django Admin interface for django-mptt models. Please see https://github.com/mbraak/django-mptt-admin',
     url='https://github.com/mbraak/django-mptt-admin',
     classifiers=[
         "Development Status :: 5 - Production/Stable",
@@ -25,6 +25,7 @@ setup(
         "Programming Language :: Python :: 3.3",
         "Programming Language :: Python :: 3.4",
         "Programming Language :: Python :: 3.5",
+        "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: Implementation :: CPython",
         "Programming Language :: Python :: Implementation :: PyPy"
     ]

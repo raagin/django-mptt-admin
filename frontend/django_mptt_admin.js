@@ -3,19 +3,45 @@
 import "jqtree";
 import Spinner from "spin";
 import cookie from "cookie";
+import URL from "url-parse";
+import qs from "querystringify";
 
 
-function initTree($tree, autoopen, autoescape, rtl) {
+function initTree($tree, autoopen, autoescape, rtl, csrf_cookie_name) {
     let error_node = null;
+    const insert_at_url = new URL($tree.data("insert_at_url"), true);
 
-    function createLi(node, $li) {
+    function createLi(node, $li, is_selected) {
         // Create edit link
         const $title = $li.find(".jqtree-title");
 
+        insert_at_url.query.insert_at = `${node.id}`;
+
+        const insert_url_string = urlToString(insert_at_url);
+
+        const tabindex = is_selected ? "0" : "-1";
+
         $title.after(
-            `<a href="${node.url}" class="edit">(${gettext("edit")})</a>`,
-            `<a href="${$tree.data("insert_at_url")}?insert_at=${node.id}" class="edit">(${gettext("add")})</a>`
+            `<a href="${node.url}" class="edit" tabindex="${tabindex}">(${gettext("edit")})</a>`,
+            `<a href="${insert_url_string}" class="edit" tabindex="${tabindex}">(${gettext("add")})</a>`
         );
+    }
+
+    function getCsrfToken() {
+      function getFromMiddleware() {
+        return document.querySelector('[name="csrfmiddlewaretoken"]').value;
+      }
+
+      function getFromCookie() {
+        if (!csrf_cookie_name) {
+          return null;
+        }
+        else {
+          return cookie.parse(document.cookie)[csrf_cookie_name];
+        }
+      }
+
+      return getFromCookie() || getFromMiddleware();
     }
 
     function handleMove(e) {
@@ -25,12 +51,21 @@ function initTree($tree, autoopen, autoescape, rtl) {
             position: info.position
         };
 
-        const conf = confirm('Применить перемещение?');
-        if (!conf) {
-            location.reload();
-            return;
+        if (DJANGO_MPTT_ADMIN.CONFIRM_MOVE) {
+            const conf = confirm('Применить перемещение?');
+            if (!conf) {
+                location.reload();
+                return;
+            }
         }
-
+        const level = jQuery('> div > span.jqtree-title', info.target_node.element).attr('aria-level');
+        if (DJANGO_MPTT_ADMIN.MAX_LEVEL != -1 ) {
+            if (level > DJANGO_MPTT_ADMIN.MAX_LEVEL && info.position == 'inside') {
+                alert("Вложеность слайдов не более чем на 1 уровень");
+                location.reload();
+                return;
+            }
+        }
         removeErrorMessage();
 
         e.preventDefault();
@@ -41,8 +76,7 @@ function initTree($tree, autoopen, autoescape, rtl) {
             data,
             beforeSend: xhr => {
                 // Set Django csrf token
-                const csrftoken = cookie.parse(document.cookie).csrftoken;
-                xhr.setRequestHeader("X-CSRFToken", csrftoken);
+                xhr.setRequestHeader("X-CSRFToken", getCsrfToken());
             },
             success: () => {
                 info.do_move();
@@ -103,6 +137,20 @@ function initTree($tree, autoopen, autoescape, rtl) {
         }
     }
 
+    function handleSelect(e) {
+        const { node, deselected_node } = e;
+
+        if (deselected_node) {
+            // deselected node: remove tabindex
+            jQuery(deselected_node.element).find(".edit").attr("tabindex", -1);
+        }
+
+        if (node) {
+            // selected: add tabindex
+            jQuery(node.element).find(".edit").attr("tabindex", 0);
+        }
+    }
+
     $tree.tree({
         autoOpen: autoopen,
         autoEscape: autoescape,
@@ -116,14 +164,31 @@ function initTree($tree, autoopen, autoescape, rtl) {
         onLoading: handleLoading
     });
 
-    $tree.bind("tree.move", handleMove);
+    $tree.on("tree.move", handleMove);
+    $tree.on("tree.select", handleSelect);
+}
+
+function urlToString(url) {
+    const querystring = qs.stringify(url.query);
+    const pathname = url.pathname;
+
+    if (!querystring) {
+        return pathname;
+    }
+    else {
+        return `${pathname}?${querystring}`;
+    }
 }
 
 jQuery(() => {
     const $tree = jQuery("#tree");
-    const autoopen = $tree.data("auto_open");
-    const autoescape = $tree.data("autoescape");
-    const rtl = $tree.data("rtl") === "1";
 
-    initTree($tree, autoopen, autoescape, rtl);
+    if ($tree.length) {
+      const autoopen = $tree.data("auto_open");
+      const autoescape = $tree.data("autoescape");
+      const rtl = $tree.data("rtl") === "1";
+      const csrf_cookie_name = $tree.data("csrf-cookie-name");
+
+      initTree($tree, autoopen, autoescape, rtl, csrf_cookie_name);
+    }
 });

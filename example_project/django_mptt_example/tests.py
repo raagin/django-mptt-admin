@@ -5,12 +5,16 @@ from django.test import TestCase
 from django.contrib.auth.models import User
 from django.contrib.admin.options import IS_POPUP_VAR
 from django.core import serializers
+import django
 
 from django_webtest import WebTest
 
-from django_mptt_admin.util import get_tree_queryset, get_javascript_value, get_short_django_version
+from django_mptt_admin.util import get_tree_queryset, get_javascript_value
 
 from .models import Country
+
+
+short_django_version = django.VERSION[0:2]
 
 
 def read_testdata():
@@ -19,6 +23,10 @@ def read_testdata():
     with open(fixture_filename) as f:
         for obj in serializers.deserialize("json", f.read()):
             obj.save()
+
+
+SCRIPT_JS_NAMESPACE = 'script[src="/static/django_mptt_admin/jquery_namespace.js"]'
+SCRIPT_JS_DJANGO_MPTT_ADMIN = 'script[src="/static/django_mptt_admin/django_mptt_admin.js"]'
 
 
 class DjangoMpttAdminWebTests(WebTest):
@@ -45,6 +53,12 @@ class DjangoMpttAdminWebTests(WebTest):
         json_url = tree_element.attr('data-url')
         self.assertEqual(json_url, '/django_mptt_example/country/tree_json/')
 
+        self.assertEqual(tree_element.attr('data-csrf-cookie-name'), 'csrftoken')
+
+        # check that js is included
+        self.assertEqual(len(countries_page.pyquery(SCRIPT_JS_NAMESPACE)), 1)
+        self.assertEqual(len(countries_page.pyquery(SCRIPT_JS_DJANGO_MPTT_ADMIN)), 1)
+
     def test_load_json(self):
         base_url = '/django_mptt_example/country/tree_json/'
 
@@ -61,10 +75,10 @@ class DjangoMpttAdminWebTests(WebTest):
 
         africa = root['children'][0]
 
-        if get_short_django_version() >= (1, 9):
-            change_url = '/django_mptt_example/country/%d/change/' % africa_id
+        if short_django_version >= (1, 9):
+            change_url = '/django_mptt_example/country/{0:d}/change/'.format(africa_id)
         else:
-            change_url = '/django_mptt_example/country/%d/' % africa_id
+            change_url = '/django_mptt_example/country/{0:d}/'.format(africa_id)
 
         self.assertEqual(
             africa,
@@ -72,7 +86,7 @@ class DjangoMpttAdminWebTests(WebTest):
                 label='Africa',
                 id=africa_id,
                 url=change_url,
-                move_url='/django_mptt_example/country/%d/move/' % africa_id,
+                move_url='/django_mptt_example/country/{0:d}/move/'.format(africa_id),
                 load_on_demand=True,
             )
         )
@@ -81,19 +95,19 @@ class DjangoMpttAdminWebTests(WebTest):
         self.assertFalse(hasattr(africa, 'children'))
 
         # -- load subtree
-        json_data = self.app.get('%s?node=%d' % (base_url, africa_id)).json
+        json_data = self.app.get('{0!s}?node={1:d}'.format(base_url, africa_id)).json
 
         self.assertEqual(len(json_data), 58)
         self.assertEqual(json_data[0]['label'], 'Algeria')
 
         # -- issue 8; selected node does not exist
-        self.app.get('%s?selected_node=9999999' % base_url)
+        self.app.get('{0!s}?selected_node=9999999'.format(base_url))
 
     def test_grid_view(self):
         # - get grid page
         grid_page = self.app.get('/django_mptt_example/country/grid/')
 
-        # get row with 'Africa'
+        # get first row
         row_index = 0
 
         first_row = grid_page.pyquery('#result_list tbody tr').eq(row_index)
@@ -107,12 +121,16 @@ class DjangoMpttAdminWebTests(WebTest):
         # link to edit page
         afghanistan_id = Country.objects.get(name='Afghanistan').id
 
-        if get_short_django_version() >= (1, 9):
-            change_url = '/django_mptt_example/country/%d/change/' % afghanistan_id
+        if short_django_version >= (1, 9):
+            change_url = '/django_mptt_example/country/{0:d}/change/'.format(afghanistan_id)
         else:
-            change_url = '/django_mptt_example/country/%d/' % afghanistan_id
+            change_url = '/django_mptt_example/country/{0:d}/'.format(afghanistan_id)
 
         self.assertEqual(first_row.find('a').attr('href'), change_url)
+
+        # check that js is not included
+        self.assertEqual(len(grid_page.pyquery(SCRIPT_JS_NAMESPACE)), 0)
+        self.assertEqual(len(grid_page.pyquery(SCRIPT_JS_DJANGO_MPTT_ADMIN)), 0)
 
     def test_move_view(self):
         def get_continents():
@@ -123,8 +141,8 @@ class DjangoMpttAdminWebTests(WebTest):
             csrf_token = countries_page.form['csrfmiddlewaretoken'].value
 
             response = self.app.post(
-                '/django_mptt_example/country/%d/move/' % source_id,
-                dict(
+                '/django_mptt_example/country/{0:d}/move/'.format(source_id),
+                params=dict(
                     csrfmiddlewaretoken=csrf_token,
                     target_id=target_id,
                     position=position,
@@ -188,7 +206,7 @@ class DjangoMpttAdminWebTests(WebTest):
 
     def test_popup(self):
         # popup must return grid view
-        grid_page = self.app.get('/django_mptt_example/country/?%s=true' % IS_POPUP_VAR)
+        grid_page = self.app.get('/django_mptt_example/country/?{0!s}=true'.format(IS_POPUP_VAR))
 
         first_row = grid_page.pyquery('#result_list tbody tr').eq(0)
         self.assertEqual(first_row.find('td').eq(0).text(), 'Afghanistan')
@@ -204,6 +222,76 @@ class DjangoMpttAdminWebTests(WebTest):
 
         # tree view
         self.app.get('/django_mptt_example/country/', status=403)
+
+    def test_filter(self):
+        # - tree view with all continents
+        countries_page = self.app.get('/django_mptt_example/country/')
+
+        self.assertEqual(
+            countries_page.pyquery('#changelist-filter li a').text(),
+            "All Africa Antarctica Asia Europe North America Oceania South America"
+        )
+
+        # - filter on 'Europe'
+        countries_page = self.app.get('/django_mptt_example/country/?continent=Europe')
+
+        tree_div = countries_page.pyquery('#tree')
+        self.assertEqual(tree_div.attr('data-url'), '/django_mptt_example/country/tree_json/?continent=Europe')
+
+        self.assertEqual(
+            tree_div.attr('data-insert_at_url'),
+            '/django_mptt_example/country/add/?_changelist_filters=continent%3DEurope'
+        )
+
+        # test json data
+        # add `selected_node` parameter
+        json_data = self.app.get('/django_mptt_example/country/tree_json/?continent=Europe&selected_node=2').json
+
+        self.assertEqual(len(json_data), 1)
+        root = json_data[0]
+        self.assertEqual(root['label'], 'Europe')
+        self.assertEqual(len(root['children']), 50)
+
+        country_node = root['children'][0]
+
+        if short_django_version >= (1, 9):
+            self.assertEqual(
+                country_node['url'],
+                "/django_mptt_example/country/{0!s}/change/?_changelist_filters=continent%3DEurope".format(country_node['id'])
+            )
+        else:
+            self.assertEqual(
+                country_node['url'],
+                "/django_mptt_example/country/{0!s}/?_changelist_filters=continent%3DEurope".format(country_node['id'])
+            )
+
+        # check urls
+        object_tool_buttons = countries_page.pyquery('.object-tools a')
+        self.assertEqual(len(object_tool_buttons), 2)
+
+        self.assertEqual(
+            object_tool_buttons.eq(0).attr('href'),
+            '/django_mptt_example/country/add/?_changelist_filters=continent%3DEurope'
+        )
+        self.assertEqual(
+            object_tool_buttons.eq(1).attr('href'),
+            '/django_mptt_example/country/grid/?continent=Europe'
+        )
+
+        # - grid view; filter on 'Europe'
+        grid_page = self.app.get('/django_mptt_example/country/grid/?continent=Europe')
+
+        object_tool_buttons = grid_page.pyquery('.object-tools a')
+        self.assertEqual(len(object_tool_buttons), 2)
+
+        self.assertEqual(
+            object_tool_buttons.eq(0).attr('href'),
+            '/django_mptt_example/country/add/?_changelist_filters=continent%3DEurope'
+        )
+        self.assertEqual(
+            object_tool_buttons.eq(1).attr('href'),
+            '/django_mptt_example/country/?continent=Europe'
+        )
 
 
 class DjangoMpttAdminTestCase(TestCase):

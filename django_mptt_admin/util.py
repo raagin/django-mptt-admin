@@ -2,10 +2,8 @@ import json
 
 import six
 
-import django
 
-
-def get_tree_from_queryset(queryset, on_create_node=None, max_level=None):
+def get_tree_from_queryset(queryset, on_create_node=None, max_level=None, item_label_field_name=None):
     """
     Return tree data that is suitable for jqTree.
     The queryset must be sorted by 'tree_id' and 'left' fields.
@@ -35,10 +33,18 @@ def get_tree_from_queryset(queryset, on_create_node=None, max_level=None):
     for instance in queryset:
         if min_level is None:
             min_level = instance.level
+        elif instance.level < min_level:
+            min_level = instance.level
 
         pk = getattr(instance, pk_attname)
+
+        if item_label_field_name:
+            label = getattr(instance, item_label_field_name)
+        else:
+            label = six.text_type(instance)
+
         node_info = dict(
-            label=six.text_type(instance),
+            label=label,
             id=serialize_id(pk)
         )
         if on_create_node:
@@ -116,14 +122,6 @@ def get_javascript_value(value):
             return 'false'
     else:
         return json.dumps(value)
-
-
-def get_short_django_version():
-    """
-    Get first two numbers of Django version.
-    E.g. (1, 8)
-    """
-    return django.VERSION[0:2]
 
 
 def get_model_name(model):
